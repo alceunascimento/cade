@@ -1,0 +1,336 @@
+---
+title: "Quarto 1"
+date: last-modified
+author: "Alceu Eilert Nascimento"
+format: 
+  html:
+    code-link: true
+    code-copy: true 
+    code-fold: true 
+    code-summary: "Mostre o código"
+    theme: cosmo
+editor: visual
+execute: 
+  echo: true
+  warning: false
+toc: true  # criar o sumario
+toc-depth: 2
+lang: pt-BR   # define o idioma para portugues
+bibliography: references.bib
+csl: ipea.csl
+---
+
+```{r}
+# setup
+## pacotes
+library(tidyverse)
+library(dplyr)
+library(here)
+library(jsonlite)
+library(listviewer)
+library(tidyr)
+library(purrr)
+library(gt)
+library(gtExtras)
+library(sjPlot)
+library(ggplot2)
+library(wesanderson)  # For palette selection
+library(flextable)
+library(kableExtra)
+library(huxtable)
+library(stringr)  # Load the stringr library for string manipulation.
+library(knitr)
+library(kableExtra)
+library(extrafont)
+```
+
+# Introdução
+
+Este relatório é para desenvolver as funcionalidades do Quarto para um HTML usando a base de dados do Superior Tribunal de Justiça.
+
+# Dados
+
+## Fonte os dados
+
+Vamos utilizar o [Portal de Dados Abertos do STJ](https://dadosabertos.web.stj.jus.br/) para obter os dataset de Jurisprudência no formato de [Espelhos de Acordão](https://dadosabertos.web.stj.jus.br/group/jurisprudencia) pegando a [3ª Turma](https://dadosabertos.web.stj.jus.br/dataset/espelhos-de-acordaos-terceira-turma), por exemplo.
+
+## Obtendo os dados
+
+Fazer o [download](https://dadosabertos.web.stj.jus.br/dataset/74a99dea-a197-4d73-a169-d8c8f8f0b175/resource/b61e0c9a-ba07-4322-99b6-d54e7a914d8d/download/20220531.json) do arquivo para alguma data, por exemplo, [31/05/2022](https://dadosabertos.web.stj.jus.br/dataset/espelhos-de-acordaos-terceira-turma/resource/b61e0c9a-ba07-4322-99b6-d54e7a914d8d).
+
+```{r}
+# defina a url alvo para download dos dados
+url <- "https://dadosabertos.web.stj.jus.br/dataset/74a99dea-a197-4d73-a169-d8c8f8f0b175/resource/b61e0c9a-ba07-4322-99b6-d54e7a914d8d/download/20220531.json"
+
+# obtenha o arquivo json raw para o R 
+data <- jsonlite::fromJSON(url, flatten = TRUE) 
+
+# obtenha o arquivo json raw para o R sem transformar em uma estrutura tabular
+json.raw <- jsonlite::fromJSON(url, simplifyVector = FALSE) 
+```
+
+::: callout-tip
+A estrutura do JSON pode ser confusa pois você tem listas dentro de listas e assim por diante. É preciso quebrar estas listas e obter as variáveis. Uma opção boa é usar o comando `flatten` do pacote `jsonlite`.
+:::
+
+## Chamando os dados
+
+Por exemplo, se você chamar `json.raw[[1]]`você obtem todas as variaveis e os valores do item 1,
+
+```{r}
+# chamar todas os valores e variaveis do item 1
+json.raw[[1]]
+```
+
+Veja que cada uma das varíáveis está precedida por um `$` e elas são numeradas cardinalmente, sendo que `$id` é a \[\[1\]\] , `RESP` é \[\[4\] e assim por diante.
+
+Para obter os dados de uma das variáveis e um dos items fazemos, por exemplo `json.raw[[1]][[12]]`:
+
+```{r}
+# chamar os valores da variavel 12 do item 1
+json.raw[[1]][[12]]
+```
+
+Para obter uma lista somente com uma das variáveis, por exemplo, a `decisao`:
+
+```{r}
+# cria um objeto com os valores da variável 12
+json.raw.decisao <- sapply(json.raw, function(x) x[[12]])
+
+# chama os primeiros valores do objeto
+head(json.raw.decisao)
+```
+
+Agora vamos pegar uma lista com a variável `nota`:
+
+```{r}
+# cria um objeto com os valores da variável 12
+json.raw.nota <- sapply(json.raw, function(x) x[[14]])
+
+# chama os primeiros valores do objeto
+glimpse(json.raw.nota)
+```
+
+::: callout-important
+## Importante
+
+É possível perceber que a análise só funciona com uma base de dados higienizada. A analise do arquivo cru apresenta erros, pois o mesmo valor "dano moral" aparece de diversas formas pela variação da grafia.
+:::
+
+## 
+
+# Manipulando os dados
+
+Primeiro, vamos ver o que temos de recursos no dataset
+
+```{r}
+# Extrai a variável 'siglaClasse' de cada decisão
+sigla_classe <- data$siglaClasse
+
+# Conta as ocorrências de cada tipo de recurso
+recurso_counts <- table(sigla_classe)
+
+# Converte a tabela em data frame e organiza a contagem por ordem descrescente
+recurso_data <- as.data.frame(recurso_counts)
+recurso_data <- recurso_data[order(-recurso_data$Freq), ]
+
+# Mantem apenas as maiores 3 contagens
+top_categories <- head(recurso_data, 3)
+
+# Cria um novo dataframe para a categoria "Outros" (para os demais tipos)
+rest_data <- data.frame(Tipo = "Outros", Contagem = sum(recurso_data$Freq[5:length(recurso_data$Freq)]))
+
+# Tenha certeza que os nomes das colunas são iguais
+colnames(rest_data) <- colnames(top_categories)
+
+# Combina as maiores 3 contagens com os "Outros"
+final_data <- rbind(top_categories, rest_data)
+
+# Renomeia as colunas para 'Tipo' e 'Contagem'
+colnames(final_data) <- c("Tipo", "Contagem")
+
+# Calcular as porcentagens
+final_data$Percentagem <- (final_data$Contagem / sum(final_data$Contagem)) * 100
+
+# Definir a paleta de cores
+custom_palette <- c("#E57373", "#64B5F6", "#81C784", "#FFD54F")
+
+# Cria um grafico pizza com cor sob medida e fonte
+pie_chart <- ggplot(final_data, aes(x = "", y = Contagem, fill = Tipo)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Distribuição dos recursos por Tipo") +
+  theme_void() +
+  scale_fill_manual(values = custom_palette) +  # Use your custom palette
+  theme(
+    legend.title = element_blank(),
+    legend.position = "right",
+    legend.direction = "vertical",
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    plot.title = element_text(size = 20, hjust = 0.5),
+    text = element_text(family = "SegoeUI"),  # Use specified font for text
+    legend.text = element_text(family = "SegoeUI")  # Use specified font for legend labels
+  ) +
+  guides(fill = guide_legend(title = "Tipo")) +
+  geom_text(aes(label = paste0(round(final_data$Percentagem, 1), "%")), 
+            position = position_stack(vjust = 0.5))
+
+# Print the pie chart
+print(pie_chart)
+
+
+
+
+
+```
+
+Vamos identificar quantas decisões foram tomar de **forma unânime** pelos ministros. Para isto, vamos utilizar a palavra-alvo "unanimidade" a ser pesquisada na variável "decisão".
+
+```{r}
+
+
+# Começa fazendo uma lista para guardar o contador de palavras
+word_counts <- list()
+
+# Define a palavra-alvo.
+target_word <- "unanimidade"
+
+# Chama os dados no JSON e conta as ocorrencias da palavra-alvo.
+for (i in seq_along(data$ministroRelator)) {
+  name <- data$ministroRelator[i]
+  text <- data$decisao[i]
+  
+  # Usa a função str_count para contar as ocorrencias (insesivel a caixa alta/baixa).
+  count <- sum(stringr::str_count(tolower(text), target_word))
+  
+  # Autualiza a contagem por pessoa da lista.
+  if (name %in% names(word_counts)) {
+    word_counts[[name]] <- word_counts[[name]] + count
+  } else {
+    word_counts[[name]] <- count
+  }
+}
+
+# Imprime a contagem por pessoa.
+for (name in names(word_counts)) {
+  count <- word_counts[[name]]
+  cat(paste(name, ": ", count, " ocorrências de'unanimidade'\n"))
+}
+```
+
+Agora vamos ver em quantas decisões o resultado de de **negar provimento** ao recurso.Para isto, vamos utilizar a palavra-alvo "negar provimento" a ser pesquisada na variável "decisão".
+
+```{r}
+
+
+
+# Começa fazendo uma lista para guardar o contador de palavras
+word_counts.2 <- list()
+
+# Define a palavra-alvo.
+target_word.2 <- "negar provimento"
+
+# Chama os dados no JSON e conta as ocorrencias da palavra-alvo.
+for (i in seq_along(data$ministroRelator)) {
+  name <- data$ministroRelator[i]
+  text <- data$decisao[i]
+  
+  # Usa a função str_count para contar as ocorrencias (insesivel a caixa alta/baixa).
+  count.2 <- sum(stringr::str_count(tolower(text), target_word.2))
+  
+  # Autualiza a contagem por pessoa da lista.
+  if (name %in% names(word_counts.2)) {
+    word_counts.2[[name]] <- word_counts.2[[name]] + count.2
+  } else {
+    word_counts.2[[name]] <- count.2
+  }
+}
+
+# Imprime a contagem por pessoa.
+for (name in names(word_counts.2)) {
+  count.2 <- word_counts.2[[name]]
+  cat(paste(name, ": ", count.2, " ocorrências de 'negar provimento'\n"))
+}
+```
+
+# Analisando
+
+Encontradas as decisões unânimes por ministro relator, vamos tabular os dados numa tabela, comparand com os numeros totais e identificando uma "taxa de acompanhamento" por cada ministro relator. Aquele ministro que tiver uma taxa de 1.0, significa que em todos os processo em que foi relator, a decisão foi por unanimidade.
+
+```{r}
+
+# Cria um data frame da lista de contagem de palavras.
+word_counts_df <- data.frame(
+  Relator = names(word_counts),
+  Unanimidade = unlist(word_counts)
+)
+
+# Organiza o dataframe pela coluna de contagem em ordem decrescente.
+word_counts_df <- word_counts_df[order(-word_counts_df$Unanimidade), ]
+
+# Cria um dataframe para guardar o total de entradas para cada nome.
+total_counts_df <- data.frame(
+  Relator = names(word_counts),
+  Todas = sapply(names(word_counts), function(name) {
+    sum(data$ministroRelator == name)
+  })
+)
+
+# Funde os dois dataframes baseado na coluna "Relator".
+result_df <- merge(word_counts_df, total_counts_df, by = "Relator", all.x = TRUE)
+
+# Calcula a frequencia relativa.
+result_df$Taxa <- result_df$Unanimidade / result_df$Todas
+
+# Organiza a tabela usando a coluna Taxa do maior para o menor.
+result_df <- result_df %>%
+  arrange(desc(Taxa))
+
+# Produz a tabela usando o KableExtra
+kableExtra::kable(result_df)
+
+```
+
+Agora vamos ver a *taxa de insucesso* dos recursos
+
+```{r}
+
+# Cria um data frame da lista de contagem de palavras.
+word_counts_df.2 <- data.frame(
+  Relator = names(word_counts.2),
+  Desprovimento = unlist(word_counts.2)
+)
+
+# Organiza o dataframe pela coluna de contagem em ordem decrescente.
+word_counts_df.2 <- word_counts_df.2[order(-word_counts_df.2$Desprovimento), ]
+
+# Cria um dataframe para guardar o total de entradas para cada nome.
+total_counts_df.2 <- data.frame(
+  Relator = names(word_counts.2),
+  Todas = sapply(names(word_counts), function(name) {
+    sum(data$ministroRelator == name)
+  })
+)
+
+# Funde os dois dataframes baseado na coluna "Relator".
+result_df.2 <- merge(word_counts_df.2, total_counts_df, by = "Relator", all.x = TRUE)
+
+# Calcula a frequencia relativa.
+result_df.2$Taxa <- result_df.2$Desprovimento / result_df.2$Todas
+
+# Organiza a tabela usando a coluna Taxa do maior para o menor.
+result_df.2 <- result_df.2 %>%
+  arrange(desc(Taxa))
+
+# Produz a tabela usando o KableExtra
+kableExtra::kable(result_df.2)
+```
+
+# Conclusão
+
+Não houve divergência quando o ministro relator foi o `r result_df$Relator[1]`. De maneira geral, das decisões preferidas (`r sum(result_df$Todas)`), maioria (`r sum(result_df$Unanimidade)`) é tomada por unanimidade, o que resulta numa *taxa de conformidade* de `r (sum(result_df$Unanimidade)/sum(result_df$Todas))*100`%.
+
+A maioria dos recursos não tem sucesso, sendo negado provimento em `r (sum(result_df.2$Desprovimento)/sum(result_df.2$Todas))*100`% dos recursos.
+
+# Referências
