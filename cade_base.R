@@ -8,6 +8,7 @@ if(!require(lubridate)) install.packages("lubridate", dependencies = TRUE)
 if(!require(ggplot2)) install.packages("ggplot2", dependencies = TRUE)
 if(!require(tidyr)) install.packages("tidyr", dependencies = TRUE)
 if(!require(stringr)) install.packages("stringr", dependencies = TRUE)
+if(!require(purrr)) install.packages("stringr", dependencies = TRUE)
 
 library(readxl)
 library(janitor)
