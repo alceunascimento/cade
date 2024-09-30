@@ -25,9 +25,9 @@ processos = [
 
 
 # Função para fazer a busca no Google
-def search_processos(query, num_results=10):
+def search_processos(query, num_results=100):
     results = []
-    for result in search(query, num_results=num_results):
+    for result in search(query, sleep_interval=5, num_results=num_results):
         if "sei.cade.gov.br" in result:
             results.append(result)
     return results
